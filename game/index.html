@@ -3,16 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<link rel="icon" href="data:,">
+<title>Solmar Bay — Open World</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; font-family: Verdana, Geneva, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  #topbar { position: absolute; top: 10px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; }
+  #wanted { font-size: 26px; letter-spacing: 4px; color: #ffd23e; }
+  #wanted .off { color: rgba(255,255,255,.25); }
+  #money { font-size: 22px; font-weight: bold; color: #7dff9a; }
+  #clock { font-size: 16px; }
+  #healthbar { width: 220px; height: 14px; background: rgba(0,0,0,.55); border: 1px solid #fff; margin-top: 4px; }
+  #healthfill { height: 100%; width: 100%; background: linear-gradient(90deg,#37d67a,#a8ff6a); }
+  #objective { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); max-width: 520px; text-align: center; background: rgba(0,0,0,.55); padding: 8px 14px; border-radius: 8px; font-size: 15px; }
+  #objective b { color: #ffd23e; }
+  #dialogue { position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); width: min(640px, 86vw); background: rgba(0,0,0,.72); border-left: 5px solid #ff9f1c; padding: 10px 14px; border-radius: 6px; font-size: 15px; line-height: 1.45; display: none; }
+  #dialogue b { color: #ffcf5c; }
+  #hint { position: absolute; left: 12px; bottom: 12px; font-size: 13px; background: rgba(0,0,0,.5); padding: 7px 10px; border-radius: 6px; line-height: 1.6; }
+  #speed { position: absolute; right: 210px; bottom: 14px; font-size: 26px; font-weight: bold; text-align: right; }
+  #speed small { font-size: 12px; display: block; color: #cfe8ff; }
+  #minimap { position: absolute; right: 12px; bottom: 12px; width: 184px; height: 184px; border: 2px solid rgba(255,255,255,.85); border-radius: 50%; background: #0e2a1e; }
+  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); font-size: 22px; color: rgba(255,255,255,.9); display: none; }
+  #toast { position: absolute; left: 50%; top: 96px; transform: translateX(-50%); font-size: 20px; font-weight: bold; color: #ffd23e; display: none; }
+  #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(6,20,40,.88), rgba(80,20,60,.82)); color: #fff; z-index: 5; }
+  #menu .card { text-align: center; max-width: 640px; padding: 28px; }
+  #menu h1 { font-size: 52px; margin: 0; color: #ffd23e; letter-spacing: 2px; }
+  #menu h2 { font-size: 18px; color: #8fd8ff; margin: 6px 0 14px; font-weight: normal; }
+  #menu p { font-size: 15px; line-height: 1.6; }
+  #menu button { pointer-events: auto; font-size: 20px; padding: 12px 28px; margin: 6px; border: none; border-radius: 8px; background: #ff9f1c; color: #201000; font-weight: bold; cursor: pointer; }
+  #menu button.alt { background: #2ec4ff; }
+  #menu .keys { font-size: 13px; color: #d8e6ff; line-height: 1.8; }
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Solmar Bay open world game"></canvas>
+<div id="hud">
+  <div id="topbar">
+    <div>
+      <div id="wanted"><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span><span class="off">★</span></div>
+      <div id="healthbar"><div id="healthfill"></div></div>
+      <div id="clock">10:00 &nbsp;•&nbsp; Marina</div>
+    </div>
+    <div id="money">$500</div>
+  </div>
+  <div id="objective"><b>Mission:</b> <span id="objtext">Talk to Lena at the Marina.</span></div>
+  <div id="toast"></div>
+  <div id="dialogue"></div>
+  <div id="crosshair">+</div>
+  <div id="hint">WASD move / drive &nbsp;•&nbsp; E enter / steal car &nbsp;•&nbsp; Click shoot &nbsp;•&nbsp; F punch &nbsp;•&nbsp; M mission &nbsp;•&nbsp; P pause &nbsp;•&nbsp; Shift run</div>
+  <div id="speed"><small>SPEED</small><span id="speedval">0</span> mph</div>
+  <canvas id="minimap" width="184" height="184"></canvas>
+</div>
+<div id="menu"><div class="card">
+  <h1>SOLMAR BAY</h1>
+  <h2>An original open-world crime story — sun, sea, and trouble.</h2>
+  <p>You are <b>Mara Voss</b>, back in Solmar Bay after five years away. Lena needs a driver, the Dockside crew wants its money back, and Inspector Hale's police are watching every street. Drive, steal, fight, and finish five story missions to take the Bay back.</p>
+  <p><button id="playbtn">▶ Start Game</button> <button id="continuebtn" class="alt">Continue (saved)</button></p>
+  <p class="keys">WASD — walk / drive &nbsp;•&nbsp; Mouse — look &amp; aim &nbsp;•&nbsp; Click — shoot &nbsp;•&nbsp; F — punch &nbsp;•&nbsp; E — enter / steal car &nbsp;•&nbsp; Shift — run &nbsp;•&nbsp; M — next mission &nbsp;•&nbsp; P / Esc — pause &nbsp;•&nbsp; R — restart after wasted / busted</p>
+  <p class="keys">Save is automatic — your money, missions and position are kept on this computer.</p>
+</div></div>
 <p id="status" role="status" aria-live="polite"></p>
 <script type="module" src="./src/main.js"></script>
 </body>

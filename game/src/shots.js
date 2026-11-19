@@ -1,79 +1,91 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// Screenshot scenes for ?shot=cover|chase|mission|night. Each stages a real
+// gameplay state with the game's own systems — a driving car, traffic, police,
+// a mission marker and dialogue — then the boot paints it.
+import { createCar } from './vehicles.js';
+import { startMission } from './missions.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+function putPlayerInCar(game, x, z, angle) {
+  const car = game.trafficCars.find((c) => !c.isPolice && c.driver === null) || game.trafficCars[0];
+  car.x = x; car.z = z; car.angle = angle; car.speed = 16; car.driver = 'player';
+  car.mesh.position.set(x, 0, z);
+  car.mesh.rotation.y = angle;
+  game.player.inCar = true;
+  game.player.car = car;
+  game.player.x = x; game.player.z = z; game.player.angle = angle;
+  return car;
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
+function placePolice(game, count) {
+  // Police in front of the player, in view of the chase camera, closing in.
+  const fx = Math.sin(game.player.angle);
+  const fz = Math.cos(game.player.angle);
+  const rx = fz;
+  const rz = -fx;
+  for (let i = 0; i < count; i += 1) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const car = createCar(
+      game.player.x + fx * (20 + i * 8) + rx * side * 7,
+      game.player.z + fz * (20 + i * 8) + rz * side * 7,
+      game.player.angle + Math.PI, 0x111111, true,
+    );
+    car.driver = 'police';
+    car.speed = 14;
+    game.scene.add(car.mesh);
+    car.mesh.position.set(car.x, 0, car.z);
+    car.mesh.rotation.y = car.angle;
+    game.police.cars.push(car);
   }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
-  }
-  return best;
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+export function stageShot(name, game) {
+  const { player, missions, police, city } = game;
+  player.health = 82;
+  player.money = 1250;
+  missions.index = 0;
+  missions.active = null;
+  police.wanted = 0;
+  police.cars = [];
+  player.hour = 10;
+  player.inCar = false;
+  player.car = null;
+
+  if (name === 'chase') {
+    // On foot, wanted 3, police cars closing in behind Mara.
+    player.x = -20; player.z = 20; player.angle = Math.PI * 0.15;
+    player.hour = 15;
+    police.wanted = 3;
+    placePolice(game, 3);
+    player.wanted = 3;
+    return { dialogue: { who: 'Lena Kaur', text: 'Mara, Hale\'s patrols are on you — run for the Marina, do not stop!' } };
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
+  if (name === 'mission') {
+    // Mission 2 in progress: getaway drive, marker and objective on the HUD.
+    putPlayerInCar(game, 20, 40, Math.PI / 2);
+    player.hour = 17;
+    missions.index = 1;
+    startMission(missions, () => {});
+    player.wanted = 1;
+    police.wanted = 1;
+    placePolice(game, 1);
+    const step = missions.active ? missions.active.mission.steps[0] : null;
+    if (step) { city.marker.visible = true; city.marker.position.set(step.x, 0, step.z); }
+    return { dialogue: { who: 'Lena Kaur', text: 'Steal a fast car on the Neon Strip and get to Palm Heights — fast!' } };
   }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  if (name === 'night') {
+    // Night on the Neon Strip: right under the neon signs at the central
+    // crossroads, so they fill the top of the frame ahead of the car.
+    putPlayerInCar(game, 0, -38, Math.PI);
+    player.hour = 21.5;
+    player.wanted = 1;
+    police.wanted = 1;
+    placePolice(game, 1);
+    return { dialogue: { who: 'Mara Voss', text: 'The Strip never sleeps — and neither does Hale.' } };
+  }
+  // cover: driving fast down the central road at noon, traffic and HUD everywhere.
+  putPlayerInCar(game, 0, 140, Math.PI);
+  player.hour = 11;
+  missions.index = 0;
+  startMission(missions, () => {});
+  player.wanted = 0;
+  return { dialogue: { who: 'Lena Kaur', text: 'Pick up the parcel at the Marina kiosk and bring it to Old Town.' } };
 }
