@@ -1,82 +1,96 @@
-// Pedestrians: walkers on the sidewalks who stroll, cross streets, flee from
-// gunfire, and sometimes wait as taxi passengers.
+// Pedestrians for Solmar Bay: walkers on the sidewalks who stroll, cross
+// at intersections, and run away from gunfire.
 import * as THREE from 'three';
-import { PED_COLORS, ROAD_SPACING, CITY, createRandom } from './config.js';
+import { CITY, ROADS, mulberry32 } from './config.js';
 
-export function makePedMesh(color) {
+const SHIRTS = [0xe84a5f, 0x3fa66a, 0x2c6fd3, 0xe8c832, 0x7a5fb0, 0xe07b39, 0xe8e8e8];
+
+export function makePedMesh(shirt) {
   const group = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.45, 0.55, 1.5, 8),
-    new THREE.MeshLambertMaterial({ color }),
+    new THREE.CylinderGeometry(0.32, 0.38, 1.1, 8),
+    new THREE.MeshLambertMaterial({ color: shirt }),
   );
-  body.position.y = 1.05;
+  body.position.y = 0.95;
   group.add(body);
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 10, 8),
-    new THREE.MeshLambertMaterial({ color: 0xE8B88A }),
+    new THREE.SphereGeometry(0.28, 10, 8),
+    new THREE.MeshLambertMaterial({ color: 0xd9a066 }),
   );
-  head.position.y = 2.1;
+  head.position.y = 1.75;
   group.add(head);
-  const legMat = new THREE.MeshLambertMaterial({ color: 0x2A2A3A });
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), legMat);
-  legL.position.set(-0.2, 0.35, 0);
-  group.add(legL);
-  const legR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), legMat);
-  legR.position.set(0.2, 0.35, 0);
-  group.add(legR);
-  group.userData.legL = legL;
-  group.userData.legR = legR;
+  const legs = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.5, 0.3),
+    new THREE.MeshLambertMaterial({ color: 0x2a2a33 }),
+  );
+  legs.position.y = 0.25;
+  group.add(legs);
   return group;
 }
 
-export function createPedestrians(scene, seed) {
-  const random = createRandom(seed + 21);
+export function spawnPedestrians(scene, count = 16) {
+  const rand = mulberry32(99);
   const peds = [];
-  const roads = [];
-  for (let i = -4; i <= 4; i += 1) roads.push(i * ROAD_SPACING);
-  for (let i = 0; i < 22; i += 1) {
-    const road = roads[Math.floor(random() * roads.length)];
-    const along = -CITY + 20 + random() * (CITY * 2 - 40);
-    const horizontal = random() < 0.5;
-    const x = horizontal ? along : road + 9;
-    const z = horizontal ? road + 9 : along;
-    const mesh = makePedMesh(PED_COLORS[i % PED_COLORS.length]);
-    mesh.position.set(x, 0, z);
-    scene.add(mesh);
-    peds.push({
-      x, z, angle: random() * Math.PI * 2, speed: 1.2 + random() * 1.2,
-      horizontal, dir: random() < 0.5 ? 1 : -1, mesh, health: 50,
-      fleeing: false, taxi: i < 3, alive: true, walkPhase: random() * 6,
-    });
+  for (let i = 0; i < count; i += 1) {
+    const line = ROADS[Math.floor(rand() * ROADS.length)];
+    const along = -CITY + rand() * CITY * 2;
+    const horizontal = rand() > 0.5;
+    const ped = {
+      mesh: makePedMesh(SHIRTS[Math.floor(rand() * SHIRTS.length)]),
+      pos: new THREE.Vector3(
+        horizontal ? along : line + 8,
+        0,
+        horizontal ? line + 8 : along,
+      ),
+      heading: rand() * Math.PI * 2,
+      speed: 1 + rand() * 0.8,
+      axis: horizontal ? 'x' : 'z',
+      dir: rand() > 0.5 ? 1 : -1,
+      fleeing: 0,
+      health: 100,
+    };
+    ped.mesh.position.copy(ped.pos);
+    scene.add(ped.mesh);
+    peds.push(ped);
   }
   return peds;
 }
 
-export function updatePedestrians(peds, dt, player, shooting) {
-  for (const p of peds) {
-    if (!p.alive) continue;
-    const distPlayer = Math.hypot(p.x - player.x, p.z - player.z);
-    if (shooting || (distPlayer < 6 && player.wanted > 0)) p.fleeing = true;
-    if (p.fleeing) {
-      // Run away from the player.
-      const dx = p.x - player.x;
-      const dz = p.z - player.z;
-      const len = Math.hypot(dx, dz) || 1;
-      p.x += (dx / len) * 4.5 * dt;
-      p.z += (dz / len) * 4.5 * dt;
-      p.angle = Math.atan2(dx, dz);
-      if (distPlayer > 40) p.fleeing = false;
-    } else {
-      const step = p.speed * dt * p.dir;
-      if (p.horizontal) p.x += step; else p.z += step;
-      if (p.x > CITY || p.x < -CITY || p.z > CITY || p.z < -CITY) p.dir *= -1;
-      p.angle = p.horizontal ? (p.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (p.dir > 0 ? 0 : Math.PI);
+export function updatePedestrians(peds, dt, gunshotPos) {
+  for (const ped of peds) {
+    if (ped.health <= 0) continue;
+    if (gunshotPos) {
+      const dx = ped.pos.x - gunshotPos.x;
+      const dz = ped.pos.z - gunshotPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 30) {
+        ped.fleeing = 3;
+        ped.heading = Math.atan2(dx, dz);
+      }
     }
-    p.walkPhase += dt * (p.fleeing ? 10 : 5);
-    p.mesh.position.set(p.x, 0, p.z);
-    p.mesh.rotation.y = p.angle;
-    const swing = Math.sin(p.walkPhase) * 0.4;
-    p.mesh.userData.legL.rotation.x = swing;
-    p.mesh.userData.legR.rotation.x = -swing;
+    let speed = ped.speed;
+    if (ped.fleeing > 0) {
+      ped.fleeing -= dt;
+      speed = 4.5;
+    } else if (Math.random() < dt * 0.05) {
+      ped.dir *= -1;
+    }
+    if (ped.fleeing > 0) {
+      ped.pos.x += Math.sin(ped.heading) * speed * dt;
+      ped.pos.z += Math.cos(ped.heading) * speed * dt;
+    } else {
+      const step = speed * ped.dir * dt;
+      if (ped.axis === 'x') ped.pos.x += step;
+      else ped.pos.z += step;
+      const along = ped.axis === 'x' ? ped.pos.x : ped.pos.z;
+      if (Math.abs(along) > CITY) ped.dir *= -1;
+      ped.heading = ped.axis === 'x' ? (ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (ped.dir > 0 ? 0 : Math.PI);
+    }
+    ped.pos.x = Math.max(-CITY - 10, Math.min(CITY + 10, ped.pos.x));
+    ped.pos.z = Math.max(-CITY - 10, Math.min(CITY + 10, ped.pos.z));
+    ped.mesh.position.copy(ped.pos);
+    ped.mesh.rotation.y = ped.heading;
+    // A little bob so walking reads as walking.
+    ped.mesh.position.y = Math.abs(Math.sin(performance.now() / 180 + ped.pos.x)) * 0.06;
   }
 }

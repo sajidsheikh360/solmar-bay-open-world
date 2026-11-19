@@ -1,102 +1,127 @@
-// Story missions and side work for Solmar Bay: five missions in order, each
-// with steps, dialogue, a glowing marker, rewards, plus taxi fares and
-// collectible sun-coins scattered around the city.
-import { MISSIONS, COLLECTIBLE_SPOTS } from './config.js';
+// Story missions and side work for Solmar Bay. Missions run in order from
+// config.js; each objective is a place to reach, a car to steal, or an
+// escape. Completing one pays out and starts the next, with dialogue.
+import { MISSIONS, ROADS, distance2D } from './config.js';
+import { addWanted } from './police.js';
 
-export function createMissions() {
+export function createMissionState() {
   return {
-    index: 0, // next mission to start (0-based)
-    active: null, // { mission, stepIndex, waitLeft }
-    dialogue: [],
-    dialogueIndex: 0,
-    collectibles: COLLECTIBLE_SPOTS.map(([x, z]) => ({ x, z, taken: false })),
-    taxi: null, // { pickupX, pickupZ, destX, destZ, state }
-    taxiTimer: 20,
-    completedCount: 0,
+    index: 0,
+    objective: 0,
+    done: false,
+    allDone: false,
+    passenger: false,
+    marker: null,
+    taxi: null,
+    taxiTimer: 0,
   };
 }
 
-export function currentMission(missions) {
-  return MISSIONS[missions.index] || null;
+export function currentMission(state) {
+  return state.index < MISSIONS.length ? MISSIONS[state.index] : null;
 }
 
-export function startMission(missions, onDialogue) {
-  const m = currentMission(missions);
-  if (!m || missions.active) return null;
-  missions.active = { mission: m, stepIndex: 0, waitLeft: 0 };
-  missions.dialogue = [...m.briefing];
-  missions.dialogueIndex = 0;
-  if (onDialogue) onDialogue(missions.dialogue[0], m.giver);
-  return m;
+export function currentObjective(state) {
+  const mission = currentMission(state);
+  if (!mission) return null;
+  return mission.objectives[state.objective] || null;
 }
 
-export function missionStep(missions) {
-  if (!missions.active) return null;
-  return missions.active.mission.steps[missions.active.stepIndex] || null;
+export function missionLabel(state) {
+  const mission = currentMission(state);
+  if (!mission) return 'All missions complete — Solmar Bay is yours, Mara.';
+  const objective = currentObjective(state);
+  return `${mission.title}: ${objective ? objective.label : ''}`;
 }
 
-export function missionObjectiveText(missions) {
-  if (missions.active) {
-    const step = missionStep(missions);
-    return step ? step.text : '';
+export function startMission(game, index) {
+  game.missions.index = index;
+  game.missions.objective = 0;
+  game.missions.done = false;
+  const mission = currentMission(game.missions);
+  if (mission && game.hud) {
+    game.hud.setDialogue(`${mission.giver}: ${mission.briefing}`);
+    game.hud.toast(`Mission ${mission.id} — ${mission.title}`);
   }
-  const m = currentMission(missions);
-  if (m) return `Press M to start: ${m.title}`;
-  return 'All story missions complete — free roam Solmar Bay!';
+  if (mission && mission.id === 5) addWanted(game, 2, 'bank alarm');
 }
 
-// Advance the active mission. Returns an event: null | 'step' | 'complete'.
-export function updateMissions(missions, player, dt, onEvent) {
-  if (!missions.active) {
-    // Taxi fares appear while free-roaming.
-    missions.taxiTimer -= dt;
-    if (!missions.taxi && missions.taxiTimer <= 0) {
-      missions.taxi = {
-        pickupX: player.x + 40, pickupZ: player.z - 30,
-        destX: player.x - 60, destZ: player.z + 80, state: 'pickup',
+export function updateMissions(game, dt) {
+  const mission = currentMission(game.missions);
+  if (mission) {
+    const objective = currentObjective(game.missions);
+    if (objective) {
+      if (objective.kind === 'car') {
+        if (game.player.inCar) completeObjective(game);
+      } else if (objective.kind === 'goto' || objective.kind === 'escape') {
+        const dist = distance2D(game.player.pos.x, game.player.pos.z, objective.x, objective.z);
+        if (objective.needsCar && !game.player.inCar) {
+          // Waiting for the player to be in a car — the marker stays put.
+        } else if (dist < 7) {
+          if (mission.id === 3 && game.missions.objective === 0) {
+            game.missions.passenger = true;
+            if (game.hud) game.hud.setDialogue('Lena: Thanks, Mara — drive, and do not stop for anyone.');
+          }
+          completeObjective(game);
+        }
+      }
+    }
+  }
+
+  // Taxi side job: a passenger waits at the stand; drive them to their stop.
+  const taxi = game.missions.taxi;
+  if (!taxi) {
+    game.missions.taxiTimer += dt;
+    if (game.missions.taxiTimer > 25) {
+      game.missions.taxiTimer = 0;
+      // Taxi destination: a random road intersection, so it is reachable.
+      const destLine = ROADS[Math.floor(Math.random() * ROADS.length)];
+      const destCross = ROADS[Math.floor(Math.random() * ROADS.length)];
+      game.missions.taxi = {
+        stage: 'wait',
+        x: 50,
+        z: 0,
+        destX: destLine,
+        destZ: destCross,
       };
-      missions.taxiTimer = 45;
-      if (onEvent) onEvent('taxi', 'Taxi fare nearby — pick up the passenger!');
+      if (game.hud) game.hud.toast('Taxi fare waiting at the Neon Strip stand');
     }
-    return null;
-  }
-  const step = missionStep(missions);
-  if (!step) return null;
-  const dist = Math.hypot(player.x - step.x, player.z - step.z);
-  if (step.type === 'wait') {
-    if (dist < 12) {
-      missions.active.waitLeft += dt;
-      if (missions.active.waitLeft >= (step.seconds || 5)) return advanceStep(missions, onEvent);
+  } else if (taxi.stage === 'wait') {
+    if (game.player.inCar && distance2D(game.player.pos.x, game.player.pos.z, taxi.x, taxi.z) < 8) {
+      taxi.stage = 'ride';
+      if (game.hud) {
+        game.hud.setDialogue('Passenger: Take me across town — and step on it.');
+        game.hud.toast('Taxi passenger aboard — drive to the gold marker');
+      }
     }
-    return null;
+  } else if (distance2D(game.player.pos.x, game.player.pos.z, taxi.destX, taxi.destZ) < 8) {
+    game.player.money += 150;
+    game.audio.jingle();
+    if (game.hud) game.hud.toast('Taxi fare complete — +$150');
+    game.missions.taxi = null;
+    game.missions.taxiTimer = 0;
   }
-  if (dist < 8) {
-    if (step.wanted && onEvent) onEvent('wanted', step.wanted);
-    return advanceStep(missions, onEvent);
-  }
-  return null;
 }
 
-function advanceStep(missions, onEvent) {
-  missions.active.stepIndex += 1;
-  missions.active.waitLeft = 0;
-  if (missions.active.stepIndex >= missions.active.mission.steps.length) {
-    const m = missions.active.mission;
-    missions.active = null;
-    missions.index += 1;
-    missions.completedCount += 1;
-    if (onEvent) onEvent('complete', m);
-    return 'complete';
+function completeObjective(game) {
+  const mission = currentMission(game.missions);
+  game.missions.objective += 1;
+  game.audio.pickup();
+  if (game.missions.objective >= mission.objectives.length) {
+    game.player.money += mission.reward;
+    game.audio.jingle();
+    if (game.hud) {
+      game.hud.toast(`Mission complete — +$${mission.reward}`);
+      game.hud.setDialogue(`${mission.giver}: Nice work, Mara. That is $${mission.reward} in your pocket.`);
+    }
+    game.missions.index += 1;
+    game.missions.objective = 0;
+    if (game.missions.index >= MISSIONS.length) {
+      game.missions.allDone = true;
+      if (game.hud) game.hud.setDialogue('Mara: Every job done. Solmar Bay is mine now.');
+    } else {
+      const next = currentMission(game.missions);
+      if (game.hud) game.hud.setDialogue(`${next.giver}: ${next.briefing}`);
+    }
   }
-  if (onEvent) onEvent('step', missionStep(missions).text);
-  return 'step';
-}
-
-export function nextDialogue(missions, onDialogue) {
-  if (missions.dialogueIndex + 1 < missions.dialogue.length) {
-    missions.dialogueIndex += 1;
-    if (onDialogue) onDialogue(missions.dialogue[missions.dialogueIndex], missions.active ? missions.active.mission.giver : 'Lena Kaur');
-    return true;
-  }
-  return false;
 }

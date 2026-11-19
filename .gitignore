@@ -1,1 +1,10 @@
+# Solmar Bay — files generated locally, never committed.
+# out/ is where main.ts writes the entry dossier for the grader.
 out/
+# Local screenshot and playtest tooling lives outside the repo, but if a
+# helper ever lands here, keep it out of the entry too.
+shot-tool/
+probe/
+*.log
+.DS_Store
+node_modules/

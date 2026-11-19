@@ -1,98 +1,126 @@
-// Solmar Bay: shared constants, districts, story missions and tuning.
-// Everything here is original: the city, its districts, people and story.
+// Solmar Bay — shared constants, districts, story missions and tuning.
+// Everything here is original: a sun-soaked coastal city of our own invention.
 export const STEP = 1 / 60;
-export const CITY = 380; // playable half-extent in world units
-export const ROAD_SPACING = 40;
-export const SAVE_KEY = 'solmar-bay-save-v1';
+export const CITY = 130; // half-extent of the drivable city, in metres
+export const ROADS = [-100, -50, 0, 50, 100]; // road centre lines, both axes
+export const ROAD_WIDTH = 12;
 
 export const DISTRICTS = [
-  { name: 'Marina', x: -140, z: 140, color: '#2ec4ff' },
-  { name: 'Old Town', x: -100, z: -60, color: '#ffb347' },
-  { name: 'Palm Heights', x: 100, z: -120, color: '#7dff9a' },
-  { name: 'Dockside', x: 140, z: 100, color: '#ff7b7b' },
-  { name: 'Neon Strip', x: 0, z: 0, color: '#ff5ce1' },
-  { name: 'Beachfront', x: -190, z: 0, color: '#ffe9a8' },
+  { name: 'Marina', x: -100, z: 100, color: '#2e86ab' },
+  { name: 'Old Town', x: -80, z: -80, color: '#c98f2e' },
+  { name: 'Palm Heights', x: 80, z: -80, color: '#3fa66a' },
+  { name: 'Dockside', x: 100, z: 100, color: '#7a5fb0' },
+  { name: 'Neon Strip', x: 0, z: 50, color: '#e5488f' },
+  { name: 'Beachfront', x: -125, z: 0, color: '#e8c97a' },
 ];
 
-export function districtAt(x, z) {
-  let best = DISTRICTS[0];
-  let bestD = Infinity;
-  for (const d of DISTRICTS) {
-    const dd = (x - d.x) * (x - d.x) + (z - d.z) * (z - d.z);
-    if (dd < bestD) { bestD = dd; best = d; }
-  }
-  return best.name;
-}
+export const PLAYER = {
+  walkSpeed: 6,
+  runSpeed: 10,
+  radius: 0.6,
+  maxHealth: 100,
+};
 
-// Seeded random so a ?seed= shot always stages the same city.
-export function createRandom(seed) {
+export const CAR = {
+  maxSpeed: 30,
+  accel: 14,
+  brake: 26,
+  steer: 2.1,
+  reverseSpeed: 10,
+};
+
+// Five story missions. Each objective is a place to reach, a car to steal,
+// a person to collect, or an escape — completed in order.
+export const MISSIONS = [
+  {
+    id: 1,
+    title: 'First Delivery',
+    giver: 'Lena Kaur',
+    briefing: 'Lena needs a package run to the Marina, then on to Palm Heights. Keep it quiet.',
+    reward: 200,
+    objectives: [
+      { kind: 'goto', label: 'Pick up the package at the Marina', x: -100, z: 100 },
+      { kind: 'goto', label: 'Deliver the package in Palm Heights', x: 100, z: -100 },
+    ],
+  },
+  {
+    id: 2,
+    title: 'Neon Getaway',
+    giver: 'Tomas Reyes',
+    briefing: 'Tomas wants a fast car off the Neon Strip. Steal one, then lose yourself at Dockside.',
+    reward: 350,
+    objectives: [
+      { kind: 'car', label: 'Steal a fast car on the Neon Strip (press E near a car)' },
+      { kind: 'goto', label: 'Reach the Dockside hideout', x: 100, z: 100 },
+    ],
+  },
+  {
+    id: 3,
+    title: 'Rescue Lena',
+    giver: 'Lena Kaur',
+    briefing: 'Lena is cornered in Old Town. Get to her, pick her up, and drive her to the Palm Heights safehouse.',
+    reward: 400,
+    objectives: [
+      { kind: 'goto', label: 'Reach Lena in Old Town', x: -100, z: -100 },
+      { kind: 'goto', label: 'Drive Lena to the Palm Heights safehouse', x: 100, z: -100, needsCar: true },
+    ],
+  },
+  {
+    id: 4,
+    title: 'Turf Pickup',
+    giver: 'Tomas Reyes',
+    briefing: 'Three drops are waiting around the city. Grab them all — the police are already watching.',
+    reward: 500,
+    objectives: [
+      { kind: 'goto', label: 'Collect the drop at the Marina', x: -100, z: 50 },
+      { kind: 'goto', label: 'Collect the drop at Dockside', x: 100, z: 50 },
+      { kind: 'goto', label: 'Collect the drop on the Neon Strip', x: 0, z: 50 },
+    ],
+  },
+  {
+    id: 5,
+    title: 'The Solmar Heist',
+    giver: 'Inspector Hale',
+    briefing: 'One last job: the Marina bank. Take the cash, then escape to the safehouse with the whole city after you.',
+    reward: 1000,
+    objectives: [
+      { kind: 'goto', label: 'Reach the Marina bank', x: -100, z: -100 },
+      { kind: 'escape', label: 'Escape to the safehouse — do not get busted', x: 0, z: 100 },
+    ],
+  },
+];
+
+// Sun coins sit at road intersections, where the player can actually reach them.
+export const COIN_POSITIONS = [
+  [-100, -100], [0, -100], [100, -100], [-100, 0], [50, 0], [100, 0],
+  [-100, 50], [50, 50], [100, 50], [-100, 100], [0, 100], [100, 100],
+];
+
+export const CAR_COLORS = [0xd33a2c, 0x2c6fd3, 0xe8c832, 0x3fa66a, 0xe8e8e8, 0x222226, 0x7a5fb0, 0xe07b39];
+export const BUILDING_COLORS = [0xf2d8a7, 0xe8b48a, 0xc9d6e2, 0xf5e6c8, 0xd9a0a0, 0xa8c8b0, 0xe8dcc8, 0xb8c8d8];
+
+// A small deterministic random helper so staged shots are repeatable.
+export function mulberry32(seed) {
   let a = seed >>> 0;
   return function random() {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-export const CAR_COLORS = [0xd7263d, 0x2ec4ff, 0xffd23e, 0x7dff9a, 0xf4f4f4, 0x222831, 0xff7b00, 0x9b5cff, 0x00c2a8, 0xc0c8d8];
-export const PED_COLORS = [0xff8fa3, 0x8fd8ff, 0xffe066, 0x9dff8f, 0xd0a2ff, 0xffb347, 0xffffff, 0x7fb069];
+export function clamp(value, min, max) {
+  return value < min ? min : value > max ? max : value;
+}
 
-// Five story missions. Each step is a place to reach, a thing to collect, or a wait.
-export const MISSIONS = [
-  {
-    id: 1, title: 'Welcome Home, Mara', giver: 'Lena Kaur',
-    briefing: ['Mara! You actually came back. The Marina crew needs a driver tonight.', 'Pick up the parcel at the Marina kiosk and bring it to Old Town. No police, no fuss.'],
-    steps: [
-      { type: 'goto', x: -120, z: 120, text: 'Pick up the parcel at the Marina kiosk' },
-      { type: 'goto', x: -120, z: -40, text: 'Deliver the parcel to Old Town' },
-    ],
-    reward: 250,
-  },
-  {
-    id: 2, title: 'The Getaway', giver: 'Lena Kaur',
-    briefing: ['The Dockside crew tipped off Hale. Grab a fast car and get to Palm Heights.', 'If the police spot you, lose them — do not get arrested.'],
-    steps: [
-      { type: 'goto', x: 40, z: 0, text: 'Steal a fast car on the Neon Strip' },
-      { type: 'goto', x: 120, z: -120, text: 'Reach the Palm Heights safehouse — wanted level will rise', wanted: 2 },
-    ],
-    reward: 400,
-  },
-  {
-    id: 3, title: 'Rescue at Dockside', giver: 'Tomas Reyes',
-    briefing: ['They grabbed my brother near the docks. You are the only one who drives like that.', 'Pick him up at Dockside and bring him to the Marina clinic. Watch the patrols.'],
-    steps: [
-      { type: 'goto', x: 120, z: 80, text: 'Find Tomas\'s brother at Dockside' },
-      { type: 'goto', x: -120, z: 120, text: 'Drive him to the Marina clinic', wanted: 1 },
-    ],
-    reward: 500,
-  },
-  {
-    id: 4, title: 'Turf Pickup', giver: 'Lena Kaur',
-    briefing: ['Three cash drops are waiting around the Bay. Collect them before Hale\'s patrols do.', 'Marina, Neon Strip, then Dockside. Quick and quiet.'],
-    steps: [
-      { type: 'collect', x: -120, z: 140, text: 'Collect cash drop 1 of 3 — Marina' },
-      { type: 'collect', x: 0, z: 40, text: 'Collect cash drop 2 of 3 — Neon Strip' },
-      { type: 'collect', x: 120, z: 120, text: 'Collect cash drop 3 of 3 — Dockside' },
-    ],
-    reward: 600,
-  },
-  {
-    id: 5, title: 'The Solmar Heist', giver: 'Mara Voss',
-    briefing: ['This is it. The Bay Bank vault, then out through the Neon Strip.', 'Every police car in Solmar Bay will be coming. Drive like the Bay is yours — because it will be.'],
-    steps: [
-      { type: 'goto', x: 0, z: -40, text: 'Reach the Bay Bank on the Neon Strip' },
-      { type: 'wait', seconds: 6, x: 0, z: -40, text: 'Crack the vault — hold your ground!' , wanted: 4 },
-      { type: 'goto', x: -160, z: -120, text: 'Escape to the Beachfront hideout — lose the police', wanted: 3 },
-    ],
-    reward: 1500,
-  },
-];
+export function distance2D(ax, az, bx, bz) {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+}
 
-export const COLLECTIBLE_SPOTS = [
-  [-120, 60], [-80, 120], [40, 120], [120, 40], [160, -40], [80, -120],
-  [-40, -120], [-120, -80], [120, 60], [-40, 80], [40, 20], [-80, 20],
-];
-
-export const PLAYER = { walkSpeed: 9, runSpeed: 14, health: 100 };
-export const CAR = { maxSpeed: 30, accel: 22, brake: 34, turn: 2.1 };
+export function angleTo(ax, az, bx, bz) {
+  return Math.atan2(bx - ax, bz - az);
+}

@@ -1,62 +1,75 @@
-// Combat: punching, shooting, car damage and health. Shooting is a hitscan
-// shot from the camera through the crosshair; hitting a pedestrian or a
-// police car raises the wanted level.
-import * as THREE from 'three';
+// Combat for Solmar Bay: punch up close, shoot with the mouse, and take
+// damage. Shooting a pedestrian or a police car raises the wanted level;
+// police at high wanted levels shoot back (see police.js).
+import { angleTo, distance2D } from './config.js';
+import { addWanted } from './police.js';
 
-export function createCombat() {
-  return { cooldown: 0, muzzleFlash: 0 };
-}
-
-export function punch(player, peds, police, onHit) {
+export function shoot(game) {
+  if (game.player.shootCooldown > 0) return;
+  game.player.shootCooldown = 0.35;
+  game.player.ammo = Math.max(0, (game.player.ammo ?? 24) - 1);
+  game.audio.shot();
+  const px = game.player.pos.x;
+  const pz = game.player.pos.z;
+  const facing = game.player.heading;
   let best = null;
-  let bestD = 3;
-  for (const p of peds) {
-    if (!p.alive) continue;
-    const d = Math.hypot(p.x - player.x, p.z - player.z);
-    if (d < bestD) { bestD = d; best = p; }
+  let bestDist = 35;
+  const consider = (x, z, target) => {
+    const dist = distance2D(px, pz, x, z);
+    if (dist > bestDist) return;
+    let diff = angleTo(px, pz, x, z) - facing;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) < 0.35) {
+      best = target;
+      bestDist = dist;
+    }
+  };
+  for (const ped of game.peds) {
+    if (ped.health > 0) consider(ped.pos.x, ped.pos.z, { kind: 'ped', ref: ped });
   }
-  if (best) {
-    best.health -= 25;
-    if (best.health <= 0) { best.alive = false; best.mesh.visible = false; }
-    if (onHit) onHit('ped');
-    return true;
+  for (const car of game.policeCars) consider(car.pos.x, car.pos.z, { kind: 'police', ref: car });
+  for (const car of game.traffic) consider(car.pos.x, car.pos.z, { kind: 'traffic', ref: car });
+  if (!best) {
+    game.lastShotPos = { x: px + Math.sin(facing) * 20, z: pz + Math.cos(facing) * 20 };
+    return;
   }
-  return false;
+  game.lastShotPos = { x: best.ref.pos.x, z: best.ref.pos.z };
+  if (best.kind === 'ped') {
+    best.ref.health -= 34;
+    if (best.ref.health <= 0) {
+      best.ref.mesh.visible = false;
+      addWanted(game, 1, 'assault on a pedestrian');
+    }
+  } else if (best.kind === 'police') {
+    best.ref.damage = (best.ref.damage || 0) + 34;
+    addWanted(game, 1, 'fired on the police');
+    if (best.ref.damage > 100) {
+      best.ref.speed = 0;
+      best.ref.mesh.rotation.z = 0.2;
+    }
+  } else {
+    best.ref.damage = (best.ref.damage || 0) + 34;
+    addWanted(game, 1, 'shot at traffic');
+  }
 }
 
-export function shoot(combat, camera, peds, policeCars, player, onHit) {
-  if (combat.cooldown > 0) return false;
-  combat.cooldown = 0.28;
-  combat.muzzleFlash = 0.08;
-  const ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-  ray.far = 60;
-  const targets = [];
-  for (const p of peds) if (p.alive) targets.push({ obj: p.mesh, kind: 'ped', ref: p });
-  for (const c of policeCars) targets.push({ obj: c.mesh, kind: 'police', ref: c });
-  const hits = ray.intersectObjects(targets.map((t) => t.obj), true);
-  if (!hits.length) return true; // shot fired, missed
-  // Walk up from the hit child mesh to the ped / car group it belongs to.
-  let hitObj = hits[0].object;
-  let target = null;
-  while (hitObj) {
-    target = targets.find((t) => t.obj === hitObj);
-    if (target) break;
-    hitObj = hitObj.parent;
+export function punch(game) {
+  if (game.player.punchCooldown > 0) return;
+  game.player.punchCooldown = 0.5;
+  const px = game.player.pos.x;
+  const pz = game.player.pos.z;
+  for (const ped of game.peds) {
+    if (ped.health <= 0) continue;
+    if (distance2D(px, pz, ped.pos.x, ped.pos.z) < 2.5) {
+      ped.health -= 20;
+      ped.fleeing = 3;
+      ped.heading = angleTo(ped.pos.x, ped.pos.z, px, pz);
+      if (ped.health <= 0) ped.mesh.visible = false;
+      addWanted(game, 1, 'assault on a pedestrian');
+      game.audio.blip(180, 0.12, 'square', 0.12);
+      return;
+    }
   }
-  if (!target) return true;
-  if (target && target.kind === 'ped') {
-    target.ref.health -= 34;
-    if (target.ref.health <= 0) { target.ref.alive = false; target.ref.mesh.visible = false; }
-    if (onHit) onHit('ped');
-  } else if (target) {
-    target.ref.health -= 20;
-    if (onHit) onHit('police');
-  }
-  return true;
-}
-
-export function damageCar(car, amount, onBreak) {
-  car.health -= amount;
-  if (car.health <= 0 && onBreak) onBreak(car);
+  game.audio.blip(120, 0.08, 'square', 0.06);
 }
